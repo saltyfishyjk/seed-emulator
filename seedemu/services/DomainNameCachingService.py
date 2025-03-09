@@ -30,6 +30,7 @@ class DomainNameCachingServer(Server, Configurable):
     __pending_forward_zones: Dict[str, str]
     __asn_range: List[int]
     __is_range_all: bool
+    __version: str  # 指定安装的软件版本，默认为''
 
     def __init__(self):
         """!
@@ -41,6 +42,20 @@ class DomainNameCachingServer(Server, Configurable):
         self.__pending_forward_zones = {}
         self.__asn_range = []
         self.__is_range_all = False
+        self.__version = ''
+
+    def setVersion(self, version: str) -> DomainNameCachingServer:
+        """!
+        @brief Set the version of the software to install.
+
+        @param version version of the software to install.
+
+        @returns self, for chaining API calls.
+        """
+        self.__version = version
+
+        return self
+
 
     def setConfigureResolvconf(self, configure: bool) -> DomainNameCachingServer:
         """!
@@ -122,8 +137,64 @@ class DomainNameCachingServer(Server, Configurable):
                     if not any(command[0] == ': > /etc/resolv.conf' for command in node.getStartCommands()):
                         node.insertStartCommand(0,': > /etc/resolv.conf')
                     node.insertStartCommand(1, 'echo "nameserver {}" >> /etc/resolv.conf'.format(address))
-    
-    def install(self, node: Node):
+
+
+
+    def install(self, node:Node):
+        if self.__version == '':
+            self.installBind(node)
+        else:
+            if 'unbound' in self.__version:
+                # 安装 UNBOUND
+                self.installUnbound(node)
+            else:
+                # 默认安装 BIND9 并且日志告警
+                print('未知的软件版本，安装默认软件 BIND9')
+                self.installBind(node)
+                pass
+            # TODO
+
+    # def install(self, node: Node):
+    #     node.addSoftware('bind9')
+    #     node.setFile('/etc/bind/named.conf.options', DomainNameCachingServiceFileTemplates['named_options'])
+    #     node.setFile('/etc/bind/named.conf.local', '')
+    #     if len(self.__root_servers) > 0:
+    #         hint = '\n'.join(self.__root_servers)
+    #         node.setFile('/usr/share/dns/root.hints', hint)
+    #         node.setFile('/etc/bind/db.root', hint)
+    #     node.appendStartCommand('service named start')
+    #
+    #     for (zone_name, vnode_name) in self.__pending_forward_zones.items():
+    #         pnode = self.__emulator.resolvVnode(vnode_name)
+    #
+    #         ifaces = pnode.getInterfaces()
+    #         assert len(ifaces) > 0, 'resolvePendingRecords(): node as{}/{} has no interfaces'.format(pnode.getAsn(),
+    #                                                                                                  pnode.getName())
+    #         vnode_addr = ifaces[0].getAddress()
+    #         node.appendFile('/etc/bind/named.conf.local',
+    #                         'zone "{}" {{ type forward; forwarders {{ {}; }}; }};\n'.format(zone_name, vnode_addr))
+    #
+    #     if not self.__configure_resolvconf: return
+    #
+    #     reg = self.__emulator.getRegistry()
+    #     (scope, _, _) = node.getRegistryInfo()
+    #     sr = ScopedRegistry(scope, reg)
+    #     ifaces = node.getInterfaces()
+    #     assert len(ifaces) > 0, 'Node {} has no IP address.'.format(node.getName())
+    #     addr = ifaces[0].getAddress()
+    #
+    #     for rnode in sr.getByType('rnode'):
+    #         rnode.appendFile('/etc/resolv.conf.new', 'nameserver {}\n'.format(addr))
+    #         if 'cat /etc/resolv.conf.new > /etc/resolv.conf' not in rnode.getStartCommands():
+    #             rnode.appendStartCommand('cat /etc/resolv.conf.new > /etc/resolv.conf')
+    #
+    #     for hnode in sr.getByType('hnode'):
+    #         if 'cat /etc/resolv.conf.new > /etc/resolv.conf' not in hnode.getStartCommands():
+    #             hnode.appendStartCommand('cat /etc/resolv.conf.new > /etc/resolv.conf')
+    #         hnode.appendFile('/etc/resolv.conf.new', 'nameserver {}\n'.format(addr))
+
+
+    def installBind(self, node: Node):
         node.addSoftware('bind9')
         node.setFile('/etc/bind/named.conf.options', DomainNameCachingServiceFileTemplates['named_options'])
         node.setFile('/etc/bind/named.conf.local','')
@@ -160,6 +231,77 @@ class DomainNameCachingServer(Server, Configurable):
             if 'cat /etc/resolv.conf.new > /etc/resolv.conf' not in hnode.getStartCommands():
                 hnode.appendStartCommand('cat /etc/resolv.conf.new > /etc/resolv.conf')
             hnode.appendFile('/etc/resolv.conf.new', 'nameserver {}\n'.format(addr))
+
+    def installUnbound(self, node: Node):
+        # 安装 UNBOUND 软件包
+        node.addSoftware('unbound')
+
+        # 设置 UNBOUND 的主配置文件
+        unbound_conf = '''
+server:
+interface: 0.0.0.0
+access-control: 0.0.0.0/0 allow
+root-hints: "/etc/unbound/root.hints"
+auto-trust-anchor-file: "/var/lib/unbound/root.key"
+hide-identity: yes
+hide-version: yes
+prefetch: yes
+minimal-responses: yes
+cache-max-ttl: 86400
+cache-min-ttl: 3600
+num-threads: 4
+do-ip4: yes
+do-udp: yes
+val-permissive-mode: yes
+'''
+        node.setFile('/etc/unbound/unbound.conf', unbound_conf)
+
+        # 设置根提示文件
+        if len(self.__root_servers) > 0:
+            # hint = '\n'.join(self.__root_servers)
+            hint = self.generateUnboundRootHints(self.__root_servers)
+            node.setFile('/etc/unbound/root.hints', hint)
+
+        # 添加启动命令
+        node.appendStartCommand('service unbound start')
+
+        # 配置 resolv.conf 文件
+        if not self.__configure_resolvconf: return
+
+        reg = self.__emulator.getRegistry()
+        (scope, _, _) = node.getRegistryInfo()
+        sr = ScopedRegistry(scope, reg)
+        ifaces = node.getInterfaces()
+        assert len(ifaces) > 0, 'Node {} has no IP address.'.format(node.getName())
+        addr = ifaces[0].getAddress()
+
+        for rnode in sr.getByType('rnode'):
+            rnode.appendFile('/etc/resolv.conf.new', 'nameserver {}\n'.format(addr))
+            if 'cat /etc/resolv.conf.new > /etc/resolv.conf' not in rnode.getStartCommands():
+                rnode.appendStartCommand('cat /etc/resolv.conf.new > /etc/resolv.conf')
+
+        for hnode in sr.getByType('hnode'):
+            hnode.appendStartCommand('cat /etc/resolv.conf.new > /etc/resolv.conf')
+        hnode.appendFile('/etc/resolv.conf.new', 'nameserver {}\n'.format(addr))
+
+    def generateUnboundRootHints(self, servers: List[str]) -> str:
+        """!
+        @brief Generate root hints content for unbound.
+
+        @param servers list of root servers.
+
+        @returns formatted root hints content.
+        """
+        ns_records = []
+        a_records = []
+        for server in servers:
+            parts = server.split()
+            if parts[1] == 'NS':
+                ns_records.append(f"{parts[0]} 3600 IN NS {parts[2]}")
+            elif parts[1] == 'A':
+                a_records.append(f"{parts[0]} 3600 IN A {parts[2]}")
+        return '\n'.join(ns_records + a_records)
+
 
 class DomainNameCachingService(Service):
     """!
