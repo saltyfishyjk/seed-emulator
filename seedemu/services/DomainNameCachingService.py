@@ -147,6 +147,8 @@ class DomainNameCachingServer(Server, Configurable):
             if 'unbound' in self.__version:
                 # 安装 UNBOUND
                 self.installUnbound(node)
+            elif 'powerdns' in self.__version:
+                self.installPowerDns(node)
             else:
                 # 默认安装 BIND9 并且日志告警
                 print('未知的软件版本，安装默认软件 BIND9')
@@ -282,7 +284,48 @@ val-permissive-mode: yes
 
         for hnode in sr.getByType('hnode'):
             hnode.appendStartCommand('cat /etc/resolv.conf.new > /etc/resolv.conf')
-        hnode.appendFile('/etc/resolv.conf.new', 'nameserver {}\n'.format(addr))
+            hnode.appendFile('/etc/resolv.conf.new', 'nameserver {}\n'.format(addr))
+
+    def installPowerDns(self, node: Node):
+        # 安装 PowerDNS 软件包
+        node.addSoftware('pdns-recursor')
+
+        # 设置 PowerDNS 的主配置文件
+        pdns_conf = '''
+    recursor:
+        local-address=0.0.0.0
+        allow-from=0.0.0.0/0
+        forward-zones-recurse={}
+        '''
+        node.setFile('/etc/powerdns/recursor.conf', pdns_conf)
+
+        # 设置根提示文件
+        if len(self.__root_servers) > 0:
+            hint = self.generateUnboundRootHints(self.__root_servers)
+            node.setFile('/etc/powerdns/root.hints', hint)
+
+        # 添加启动命令
+        node.appendStartCommand('service pdns-recursor start')
+
+        # 配置 resolv.conf 文件
+        if not self.__configure_resolvconf: return
+
+        reg = self.__emulator.getRegistry()
+        (scope, _, _) = node.getRegistryInfo()
+        sr = ScopedRegistry(scope, reg)
+        ifaces = node.getInterfaces()
+        assert len(ifaces) > 0, 'Node {} has no IP address.'.format(node.getName())
+        addr = ifaces[0].getAddress()
+
+        for rnode in sr.getByType('rnode'):
+            rnode.appendFile('/etc/resolv.conf.new', 'nameserver {}\n'.format(addr))
+            if 'cat /etc/resolv.conf.new > /etc/resolv.conf' not in rnode.getStartCommands():
+                rnode.appendStartCommand('cat /etc/resolv.conf.new > /etc/resolv.conf')
+
+        for hnode in sr.getByType('hnode'):
+            hnode.appendStartCommand('cat /etc/resolv.conf.new > /etc/resolv.conf')
+            hnode.appendFile('/etc/resolv.conf.new', 'nameserver {}\n'.format(addr))
+
 
     def generateUnboundRootHints(self, servers: List[str]) -> str:
         """!
