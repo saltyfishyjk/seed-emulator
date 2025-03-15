@@ -20,6 +20,27 @@ options {
 };
 '''
 
+DomainNameServiceFileTemplates['pdns_conf'] = '''\
+launch=gmysql
+gmysql-host=localhost
+gmysql-user=pdns
+gmysql-password=pdns
+gmysql-dbname=pdns
+'''
+
+DomainNameServiceFileTemplates['unbound_conf'] = '''\
+server:
+    directory: "/etc/unbound"
+    username: "unbound"
+    chroot: "/etc/unbound"
+    pidfile: "/var/run/unbound.pid"
+    root-hints: "/etc/unbound/root.hints"
+    auto-trust-anchor-file: "/var/lib/unbound/root.key"
+    interface: 0.0.0.0
+    access-control: 0.0.0.0/0 allow
+    verbosity: 1
+'''
+
 class Zone(Printable):
     """!
     @brief Domain name zone.
@@ -240,6 +261,7 @@ class DomainNameServer(Server):
     __node: Node
     __is_master: bool
     __is_real_root: bool
+    __version: str
 
     def __init__(self):
         """!
@@ -250,6 +272,7 @@ class DomainNameServer(Server):
         self.__zones = set()
         self.__is_master = False
         self.__is_real_root = False
+        self.__version = ''
 
     def addZone(self, zonename: str, createNsAndSoa: bool = True) -> DomainNameServer:
         """!
@@ -276,6 +299,17 @@ class DomainNameServer(Server):
         self.__is_master = True
 
         return self
+
+    def setVersion(self, version: str) -> DomainNameServer:
+        """!
+        @brief set the version of the server.
+
+        @returns self, for chaining API calls.
+        """
+        self.__version = version
+
+        return self
+
 
     def setRealRootNS(self) -> DomainNameServer:
         """!
@@ -374,6 +408,9 @@ class DomainNameServer(Server):
                 zone.addGuleRecord('ns{}.{}'.format(str(ns_number), zonename), addr)
                 zone.addRecord('ns{}.{} A {}'.format(str(ns_number), zonename, addr))
                 zone.addRecord('@ NS ns{}.{}'.format(str(ns_number), zonename))
+                # 添加域名A记录到权威服务器（权威服务器和域名服务器在一个）
+                # 如，twitter.com 和其 NS ns1.twitter.com的A记录都是10.161.0.71
+                zone.addRecord('@ A {}'.format(addr))
                 
             if zone.getName() == "." and self.__is_real_root:
                 for record in self.__getRealRootRecords():
@@ -385,10 +422,24 @@ class DomainNameServer(Server):
         """
         assert node == self.__node, 'configured node differs from install node. Please check if there are conflict bindings'
 
-        node.addSoftware('bind9')
-        node.appendStartCommand('echo "include \\"/etc/bind/named.conf.zones\\";" >> /etc/bind/named.conf.local')
-        node.setFile('/etc/bind/named.conf.options', DomainNameServiceFileTemplates['named_options'])
-        node.setFile('/etc/bind/named.conf.zones', '')
+        if (self.__version != ''):
+            node.addSoftware(self.__version)
+            if 'powerdns' in self.__version:
+                node.addSoftware('pdns-server')
+                node.addSoftware('pdns-backend-mysql')
+                node.appendStartCommand('echo "include \\"/etc/powerdns/pdns.conf\\";" >> /etc/powerdns/pdns.conf')
+                node.setFile('/etc/powerdns/pdns.conf', DomainNameServiceFileTemplates['pdns_conf'])
+                node.setFile('/etc/powerdns/zones.conf', '')
+            elif 'unbound' in self.__version:
+                node.addSoftware('unbound')
+                node.appendStartCommand('echo "include \\"/etc/unbound/unbound.conf.d/*.conf\\";" >> /etc/unbound/unbound.conf')
+                node.setFile('/etc/unbound/unbound.conf', DomainNameServiceFileTemplates['unbound_conf'])
+                node.setFile('/etc/unbound/unbound.conf.d/zones.conf', '')
+        else: # default bind9
+            node.addSoftware('bind9')
+            node.appendStartCommand('echo "include \\"/etc/bind/named.conf.zones\\";" >> /etc/bind/named.conf.local')
+            node.setFile('/etc/bind/named.conf.options', DomainNameServiceFileTemplates['named_options'])
+            node.setFile('/etc/bind/named.conf.zones', '')
 
         for (_zonename, auto_ns_soa) in self.__zones:
             zone = dns.getZone(_zonename)
@@ -402,7 +453,7 @@ class DomainNameServer(Server):
 
             if self.__is_master:
                 node.appendFile('/etc/bind/named.conf.zones',
-                        'zone "{}" {{ type master; notify yes; allow-transfer {{ any; }}; file "{}"; allow-update {{ any; }}; }};\n'.format(zonename, zonepath)
+                        'zone "{}" {{ type master;  notify yes; allow-transfer {{ any; }}; file "{}"; allow-update {{ any; }}; }};\n'.format(zonename, zonepath)
                     )
             elif zone.getName() in dns.getMasterIp().keys(): # Check if there are some master servers
                 master_ips = ';'.join(dns.getMasterIp()[zone.getName()])
@@ -416,6 +467,48 @@ class DomainNameServer(Server):
 
         node.appendStartCommand('chown -R bind:bind /etc/bind/zones')
         node.appendStartCommand('service named start')
+
+def install_with_version(self, node:Node, dns:DomainNameService, software: str):
+    """!
+    @brief Handle the installation.
+    """
+    assert node == self.__node, 'configured node differs from install node. Please check if there are conflict bindings'
+
+    node.addSoftware(software)
+    node.appendStartCommand('echo "include \\"/etc/bind/named.conf.zones\\";" >> /etc/bind/named.conf.local')
+    node.setFile('/etc/bind/named.conf.options', DomainNameServiceFileTemplates['named_options'])
+    node.setFile('/etc/bind/named.conf.zones', '')
+
+    for (_zonename, auto_ns_soa) in self.__zones:
+        zone = dns.getZone(_zonename)
+        zonename = filename = zone.getName()
+
+        if zonename == '' or zonename == '.':
+            filename = 'root'
+            zonename = '.'
+        zonepath = '/etc/bind/zones/{}'.format(filename)
+        node.setFile(zonepath, '\n'.join(zone.getRecords()))
+
+        if self.__is_master:
+            node.appendFile('/etc/bind/named.conf.zones',
+                            'zone "{}" {{ type master;  notify yes; allow-transfer {{ any; }}; file "{}"; allow-update {{ any; }}; }};\n'.format(
+                                zonename, zonepath)
+                            )
+        elif zone.getName() in dns.getMasterIp().keys():  # Check if there are some master servers
+            master_ips = ';'.join(dns.getMasterIp()[zone.getName()])
+            node.appendFile('/etc/bind/named.conf.zones',
+                            'zone "{}" {{ type slave; masters {{ {}; }}; file "{}"; }};\n'.format(zonename, master_ips,
+                                                                                                  zonepath)
+                            )
+        else:
+            node.appendFile('/etc/bind/named.conf.zones',
+                            'zone "{}" {{ type master; file "{}"; allow-update {{ any; }}; }};\n'.format(zonename,
+                                                                                                         zonepath)
+                            )
+
+    node.appendStartCommand('chown -R bind:bind /etc/bind/zones')
+    node.appendStartCommand('service named start')
+
     
 class DomainNameService(Service):
     """!
