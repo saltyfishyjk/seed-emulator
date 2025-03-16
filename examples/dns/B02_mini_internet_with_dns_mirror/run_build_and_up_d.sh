@@ -1,4 +1,5 @@
 #!/bin/bash
+# 等价于在 ./output 目录下执行 docker-compose build && docker-compose up -d
 
 # 定义目标目录
 TARGET_DIR="./output"
