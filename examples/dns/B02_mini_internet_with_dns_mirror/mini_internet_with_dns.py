@@ -70,30 +70,42 @@ def run(dumpfile=None):
     # Create two local DNS servers (virtual nodes).
     ldns = DomainNameCachingService()
     global_dns_1: DomainNameCachingServer = ldns.install('global-dns-1')
+    global_dns_2: DomainNameCachingServer = ldns.install('global-dns-2')
+
     # global_dns_1.setVersion('powerdns')
-    global_dns_1.setVersion('unbound')
+    # global_dns_1.setVersion('unbound')
     # global_dns_2: DomainNameCachingServer = ldns.install('global-dns-2')
 
     # Customize the display name (for visualization purpose)
     emu.getVirtualNode('global-dns-1').setDisplayName('Global DNS-1')
-    # emu.getVirtualNode('global-dns-2').setDisplayName('Global DNS-2')
+    emu.getVirtualNode('global-dns-2').setDisplayName('Global DNS-2')
+
+
 
     # Create two new host in AS-152 and AS-153, use them to host the local DNS server.
     # We can also host it on an existing node.
+
+    dns_1_address = '10.152.0.53'
+    dns_2_address = '10.153.0.53'
+
     base: Base = emu.getLayer('Base')
     as152 = base.getAutonomousSystem(152)
-    as152.createHost('local-dns-1').joinNetwork('net0', address='10.152.0.53')
-    # as153 = base.getAutonomousSystem(153)
-    # as153.createHost('local-dns-2').joinNetwork('net0', address='10.153.0.53')
+    as152.createHost('local-dns-1').joinNetwork('net0', address=dns_1_address)
+    as153 = base.getAutonomousSystem(153)
+    as153.createHost('local-dns-2').joinNetwork('net0', address=dns_2_address)
+
+    global_dns_2.setForwardOnly(True)
+    global_dns_2.setForwarders([dns_1_address])
 
     # Bind the Local DNS virtual nodes to physical nodes
     emu.addBinding(Binding('global-dns-1', filter=Filter(asn=152, nodeName="local-dns-1")))
-    # emu.addBinding(Binding('global-dns-2', filter=Filter(asn=153, nodeName="local-dns-2")))
+    emu.addBinding(Binding('global-dns-2', filter=Filter(asn=153, nodeName="local-dns-2")))
 
     # Add 10.152.0.53 as the local DNS server for AS-160 and AS-170
     # Add 10.153.0.53 as the local DNS server for all the other nodes
     global_dns_1.setNameServerOnNodesByAsns(asns=[160, 170])
-    # global_dns_2.setNameServerOnAllNodes()
+    # global_dns_1.setNameServerOnAllNodes()
+    global_dns_2.setNameServerOnAllNodes()
 
     # Add the ldns layer
     emu.addLayer(ldns)

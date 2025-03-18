@@ -7,15 +7,45 @@ from seedemu.core.enums import NetworkType
 
 DomainNameCachingServiceFileTemplates: Dict[str, str] = {}
 
-DomainNameCachingServiceFileTemplates['named_options'] = '''\
-options {
-    directory "/var/cache/bind";
-    recursion yes;
-    dnssec-validation no;
-    empty-zones-enable no;
-    allow-query { any; };
-};
-'''
+# DomainNameCachingServiceFileTemplates['named_options'] = '''\
+# options {
+#     directory "/var/cache/bind";
+#     recursion yes;
+#     dnssec-validation no;
+#     empty-zones-enable no;
+#     allow-query { any; };
+# };
+# '''
+
+named_options = {
+    "directory": "\"/var/cache/bind\"",
+    "recursion": "yes",
+    "dnssec-validation": "no",
+    "empty-zones-enable": "no",
+    "allow-query": "{ any; }"
+}
+
+# def generate_named_options(config):
+#     options = ["options {"]
+#     for key, value in config.items():
+#         options.append(f"    {key} {value};")
+#     options.append("};")
+#     return "\n".join(options)
+
+def generate_named_options(config):
+    options = ["options {"]
+    for key, value in config.items():
+        if isinstance(value, str):
+            options.append(f"    {key} {value};")
+        elif isinstance(value, list):
+            options.append(f"    {key} {{")
+            for item in value:
+                options.append(f"        {item};")
+            options.append("    };")
+    options.append("};")
+    return "\n".join(options)
+
+DomainNameCachingServiceFileTemplates['named_options'] = generate_named_options(named_options)
 
 class DomainNameCachingServer(Server, Configurable):
     """!
@@ -31,6 +61,8 @@ class DomainNameCachingServer(Server, Configurable):
     __asn_range: List[int]
     __is_range_all: bool
     __version: str  # 指定安装的软件版本，默认为''
+    __forward_only: bool
+    __forwarders: List[str]
 
     def __init__(self):
         """!
@@ -43,6 +75,23 @@ class DomainNameCachingServer(Server, Configurable):
         self.__asn_range = []
         self.__is_range_all = False
         self.__version = ''
+        self.__forwarders = []
+        self.__forward_only = False
+
+    def setForwardOnly(self, forward_only: bool) -> DomainNameCachingServer:
+        self.__forward_only = forward_only
+        return self
+
+    def getForwardOnly(self) -> bool:
+        return self.__forward_only
+
+    def setForwarders(self, forwarders: List[str]) -> DomainNameCachingServer:
+        self.__forwarders = forwarders
+        return self
+
+    def getForwarders(self) -> List[str]:
+        return self.__forwarders
+
 
     def setVersion(self, version: str) -> DomainNameCachingServer:
         """!
@@ -198,7 +247,14 @@ class DomainNameCachingServer(Server, Configurable):
 
     def installBind(self, node: Node):
         node.addSoftware('bind9')
-        node.setFile('/etc/bind/named.conf.options', DomainNameCachingServiceFileTemplates['named_options'])
+        # 取出模板
+        named_options_now = named_options.copy()
+        if self.getForwardOnly():
+            named_options_now["forward"] = "only"
+            named_options_now["forwarders"] = self.getForwarders()
+
+        node.setFile('/etc/bind/named.conf.options', generate_named_options(named_options_now))
+        # node.setFile('/etc/bind/named.conf.options', DomainNameCachingServiceFileTemplates['named_options'])
         node.setFile('/etc/bind/named.conf.local','')
         if len(self.__root_servers) > 0:
             hint = '\n'.join(self.__root_servers)
