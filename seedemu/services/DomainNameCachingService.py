@@ -191,9 +191,12 @@ class DomainNameCachingServer(Server, Configurable):
 
     def install(self, node:Node):
         if self.__version == '':
+            self.__version = 'bind9'
             self.installBind(node)
         else:
-            if 'unbound' in self.__version:
+            if 'bind' in self.__version:
+                self.installBind(node)
+            elif 'unbound' in self.__version:
                 # 安装 UNBOUND
                 self.installUnbound(node)
             elif 'powerdns' in self.__version:
@@ -246,7 +249,8 @@ class DomainNameCachingServer(Server, Configurable):
 
 
     def installBind(self, node: Node):
-        node.addSoftware('bind9')
+        # node.addSoftware('bind9')
+        node.addSoftware(self.__version)
         # 取出模板
         named_options_now = named_options.copy()
         if self.getForwardOnly():

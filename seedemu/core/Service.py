@@ -33,6 +33,23 @@ class Server(Printable):
         @param node node.
         """
         raise NotImplementedError('install not implemented')
+
+    # def install(self, node: Node, software: str):
+    #     """!
+    #     @brief Install the server on node.
+    #
+    #     @param node node.
+    #     """
+    #     raise NotImplementedError('install not implemented')
+
+    def installByVersion(self, node:Node, version:str):
+        """!
+        @brief Install the server on node.
+
+        @param node node.
+        @param version version.
+        """
+        raise NotImplementedError('installByVersion not implemented')
     
     def setBaseSystem(self, base_system: BaseSystem) -> Server:
         """!

@@ -72,6 +72,7 @@ def run(dumpfile=None):
     global_dns_1: DomainNameCachingServer = ldns.install('global-dns-1')
     global_dns_2: DomainNameCachingServer = ldns.install('global-dns-2')
 
+    global_dns_1.setVersion('bind-9.21.2')
     # global_dns_1.setVersion('powerdns')
     # global_dns_1.setVersion('unbound')
     # global_dns_2: DomainNameCachingServer = ldns.install('global-dns-2')
@@ -94,8 +95,8 @@ def run(dumpfile=None):
     as153 = base.getAutonomousSystem(153)
     as153.createHost('local-dns-2').joinNetwork('net0', address=dns_2_address)
 
-    global_dns_2.setForwardOnly(True)
-    global_dns_2.setForwarders([dns_1_address])
+    # global_dns_2.setForwardOnly(True)
+    # global_dns_2.setForwarders([dns_1_address])
 
     # Bind the Local DNS virtual nodes to physical nodes
     emu.addBinding(Binding('global-dns-1', filter=Filter(asn=152, nodeName="local-dns-1")))
@@ -103,9 +104,9 @@ def run(dumpfile=None):
 
     # Add 10.152.0.53 as the local DNS server for AS-160 and AS-170
     # Add 10.153.0.53 as the local DNS server for all the other nodes
-    global_dns_1.setNameServerOnNodesByAsns(asns=[160, 170])
-    # global_dns_1.setNameServerOnAllNodes()
-    global_dns_2.setNameServerOnAllNodes()
+    # global_dns_1.setNameServerOnNodesByAsns(asns=[160, 170])
+    global_dns_1.setNameServerOnAllNodes()
+    # global_dns_2.setNameServerOnAllNodes()
 
     # Add the ldns layer
     emu.addLayer(ldns)

@@ -36,7 +36,7 @@ class CompileTest(ut.TestCase):
             "basic/A08_buildtime_docker" :  (["create_eth_account.py"], ["output"]),
             "basic/A20_nano_internet" :     (["nano_internet.py"], ["output", "base_component.bin"]),
             "basic/A21_shadow_internet" :   (["shadow_internet.py"], ["output"]),
-            "internet/B00_mini_internet" :              (["mini_internet.py"], ["output"]),
+            "internet/B00_mini_internet_mirror" :              (["mini_internet.py"], ["output"]),
             "internet/B01_dns_component" :              (["dns_component.py"], ["dns_component.bin"]),
             "internet/B02_mini_internet_with_dns" :     (["mini_internet_with_dns.py"], ["output", "base_internet.bin", "dns_component.bin"]),
             "internet/B03_hybrid_internet" :            (["hybrid_internet.py"], ["output"]),

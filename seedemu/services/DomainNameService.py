@@ -422,7 +422,7 @@ class DomainNameServer(Server):
         """
         assert node == self.__node, 'configured node differs from install node. Please check if there are conflict bindings'
 
-        if (self.__version != ''):
+        if self.__version != '':
             node.addSoftware(self.__version)
             if 'powerdns' in self.__version:
                 node.addSoftware('pdns-server')

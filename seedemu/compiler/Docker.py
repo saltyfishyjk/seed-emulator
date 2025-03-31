@@ -3,6 +3,7 @@ from seedemu.core.Emulator import Emulator
 from seedemu.core import Node, Network, Compiler, BaseSystem
 from seedemu.core.enums import NodeRole, NetworkType
 from .DockerImage import DockerImage
+from seedemu.utilities.SpecificVersionSoftwareEnum import SpecificVersionSoftwareEnum
 from .DockerImageConstant import *
 from typing import Dict, Generator, List, Set, Tuple
 from hashlib import md5
@@ -11,6 +12,7 @@ from re import sub
 from ipaddress import IPv4Network, IPv4Address
 from shutil import copyfile
 import json
+import re
 
 
 SEEDEMU_INTERNET_MAP_IMAGE='handsonsecurity/seedemu-multiarch-map:buildx-latest'
@@ -802,6 +804,94 @@ class Docker(Compiler):
         copyfile(hostpath, staged_path)
         return 'COPY {} {}\n'.format(staged_path, path)
 
+
+    # 分发器，将需要特定安装的软件
+    def _compileSpecificVersionSoftwareForDocker(self, soft: str) -> str:
+        """!
+        @brief Compile specific version software for docker.
+
+        @param soft software name.
+
+        @returns compiled software name.
+        """
+        ret = ''
+        for enum_member in SpecificVersionSoftwareEnum:
+            if re.match(enum_member.value, soft):
+                # 找到匹配的软件
+                # bind
+                if enum_member == SpecificVersionSoftwareEnum.BIND:
+                    ret = self._compileSpecificVersionBindForDocker(soft)
+                # unbound TODO
+                # powerdns TODO
+        return ret
+
+    # TODO 检查bind的/etc/named.conf
+        def _compileSpecificVersionBindForDocker(self, soft: str) -> str:
+            """!
+            @brief Compile specific version bind for docker.
+
+            @param soft software name.
+
+            @returns compiled software name.
+            """
+            ret = ''
+            # 设置环境变量，避免交互式提示
+            ret = ret + 'ENV DEBIAN_FRONTEND=noninteractive\n\n'
+            # 安装编译BIND所需的工具和库
+            ret = ret + 'RUN apt-get update && apt-get install -y \\\n\
+        build-essential \\\n\
+        libssl-dev \\\n\
+        wget \\\n\
+        bison \\\n\
+        pkg-config \\\n\
+        liburcu-dev \\\n\
+        libuv1 \\\n\
+        libuv1-dev \\\n\
+        libnghttp2-dev \\\n\
+        libcap-dev \\\n\
+        && apt-get clean \\\n\
+        && rm -rf /var/lib/apt/lists/*\n\n'
+
+            # 创建 bind 用户和组
+            ret = ret + 'RUN groupadd -r named && useradd -r -g named named\n\n'
+
+            bind4_pattern = r'^bind-4([a-zA-Z0-9.]+)$'  # 形如bind-4.1.1
+            bind8_pattern = r'^bind-8([a-zA-Z0-9.]+)$'  # 形如bind-8.1.1
+            bind9_pattern = r'^bind-(9[a-zA-Z0-9.]+)$'  # 形如bind-9.1.1
+            bind10_pattern = r'^bind-10([a-zA-Z0-9.]+)$'  # 形如bind-10.1.1
+
+            if re.match(bind4_pattern, soft):
+                # TODO
+                return 'bind4'
+            elif re.match(bind8_pattern, soft):
+                # TODO
+                return 'bind9'
+            elif re.match(bind9_pattern, soft):
+                match = re.match(bind9_pattern, soft)
+                version = match.group(1)
+                #         ret = ret + f'RUN wget https://ftp.isc.org/isc/bind9/{version}/{soft}.tar.gz && \\\n\
+                # tar -xzvf {soft}.tar.gz && \\\n\
+                # cd {soft} && \\\n\
+                # ./configure --prefix=/usr/local/named --enable-threads && \\\n\
+                # make && \\\n\
+                # make install && \\\n\
+                # rm -rf /{soft}* /{soft}.tar.gz\n\n'
+                ret = ret + f'RUN wget https://ftp.isc.org/isc/bind9/{version}/{soft}.tar.gz || wget https://ftp.isc.org/isc/bind9/{version}/{soft}.tar.xz && \\\n\
+        if [ -f {soft}.tar.gz ]; then tar -xzvf {soft}.tar.gz; else tar -xJvf {soft}.tar.xz; fi && \\\n\
+        cd {soft} && \\\n\
+        ./configure --prefix=/usr/local/named --with-user=named --with-group=named --enable-threads && \\\n\
+        make && \\\n\
+        make install && \\\n\
+        rm -rf /{soft}* /{soft}.tar.gz /{soft}.tar.xz\n\n'
+            elif re.match(bind10_pattern, soft):
+                # TODO
+                return 'bind10'
+
+            ret = ret + 'RUN mkdir -p /etc/bind /var/cache/bind /var/log/bind \n\
+    RUN chown -R named:named /etc/bind /var/cache/bind /var/log/bind\n\n'
+
+            return ret
+
     def _compileNode(self, node: Node) -> str:
         """!
         @brief Compile a single node. Will create folder for node and the
@@ -897,6 +987,10 @@ class Docker(Compiler):
 
         (image, soft) = self._selectImageFor(node)
 
+        # 实现具体的Dockerfile中的安装命令
+        # TODO 实现安装特定版本bind
+
+        # __soft_install_tiers
         if not node.hasAttribute('__soft_install_tiers') and len(soft) > 0:
             dockerfile += 'RUN apt-get update && apt-get install -y --no-install-recommends {}\n'.format(' '.join(sorted(soft)))
 
@@ -905,7 +999,14 @@ class Docker(Compiler):
             for softList in softLists:
                 softList = set(softList) & soft
                 if len(softList) == 0: continue
-                dockerfile += 'RUN apt-get update && apt-get install -y --no-install-recommends {}\n'.format(' '.join(sorted(softList)))
+                for softItem in sorted(softList):
+                    if any(re.match(enum_member.value, softItem) for enum_member in SpecificVersionSoftwareEnum):
+                        dockerfile += self._compileSpecificVersionSoftwareForDocker(softItem)
+                    else:
+                        dockerfile += 'RUN apt-get update && apt-get install -y --no-install-recommends {}\n'.format(softItem)
+                # dockerfile += 'RUN apt-get update && apt-get install -y --no-install-recommends {}\n'.format(' '.join(sorted(softList)))
+
+
 
         #included in the seedemu-base dockerImage.
         #dockerfile += 'RUN curl -L https://grml.org/zsh/zshrc > /root/.zshrc\n'
