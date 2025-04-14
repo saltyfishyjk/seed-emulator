@@ -466,8 +466,9 @@ class DomainNameServer(Server):
                 )
 
         node.appendStartCommand('chown -R bind:bind /etc/bind/zones')
-        node.appendStartCommand('service named start')
+        node.appendStartCommand('service named start')  # 没有执行，不知道为什么
 
+# 暂未启用
 def install_with_version(self, node:Node, dns:DomainNameService, software: str):
     """!
     @brief Handle the installation.

@@ -337,7 +337,7 @@ class Node(Printable, Registrable, Configurable, Vertex):
 
         if len(self.__name_servers) == 0:
             return
-
+        # 添加 start.sh 中的内容
         self.insertStartCommand(0,': > /etc/resolv.conf')
         for idx, s in enumerate(self.__name_servers, start=1):
             self.insertStartCommand(idx, 'echo "nameserver {}" >> /etc/resolv.conf'.format(s))

@@ -85,6 +85,7 @@ class Base(Layer, Graphable):
 
             node.setFile('/ifinfo.txt', ifinfo)
             node.setFile('/interface_setup', BaseFileTemplates['interface_setup_script'])
+            # 添加 start.sh 脚本内容
             node.insertStartCommand(0, '/interface_setup')
             node.insertStartCommand(0, 'chmod +x /interface_setup')
 

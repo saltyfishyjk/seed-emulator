@@ -183,6 +183,7 @@ class DomainNameCachingServer(Server, Configurable):
         for ((scope, type, name), node) in reg.getAll().items():
             if type in ['hnode', 'rnode']:
                 if self.__is_range_all or node.getAsn() in self.__asn_range:
+                    # 添加到 start.sh 脚本
                     if not any(command[0] == ': > /etc/resolv.conf' for command in node.getStartCommands()):
                         node.insertStartCommand(0,': > /etc/resolv.conf')
                     node.insertStartCommand(1, 'echo "nameserver {}" >> /etc/resolv.conf'.format(address))
@@ -253,6 +254,7 @@ class DomainNameCachingServer(Server, Configurable):
         node.addSoftware(self.__version)
         # 取出模板
         named_options_now = named_options.copy()
+        # 如果是转发器
         if self.getForwardOnly():
             named_options_now["forward"] = "only"
             named_options_now["forwarders"] = self.getForwarders()
@@ -264,7 +266,12 @@ class DomainNameCachingServer(Server, Configurable):
             hint = '\n'.join(self.__root_servers)
             node.setFile('/usr/share/dns/root.hints', hint)
             node.setFile('/etc/bind/db.root', hint)
-        node.appendStartCommand('service named start')
+        # start.sh中添加启动named服务脚本
+        # 如果是标准的bind9，即从apt-get安装
+        if 'bind9' == self.__version:
+            node.appendStartCommand('service named start')
+        elif 'bind' in self.__version:
+            node.appendStartCommand('named -c /etc/bind/named.conf')
 
         for (zone_name, vnode_name) in self.__pending_forward_zones.items():
             pnode = self.__emulator.resolvVnode(vnode_name)

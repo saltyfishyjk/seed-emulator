@@ -826,71 +826,122 @@ class Docker(Compiler):
         return ret
 
     # TODO 检查bind的/etc/named.conf
-        def _compileSpecificVersionBindForDocker(self, soft: str) -> str:
-            """!
-            @brief Compile specific version bind for docker.
+    def _compileSpecificVersionBindForDocker(self, soft: str) -> str:
+        """!
+        @brief Compile specific version bind for docker.
 
-            @param soft software name.
+        @param soft software name.
 
-            @returns compiled software name.
-            """
-            ret = ''
-            # 设置环境变量，避免交互式提示
-            ret = ret + 'ENV DEBIAN_FRONTEND=noninteractive\n\n'
-            # 安装编译BIND所需的工具和库
-            ret = ret + 'RUN apt-get update && apt-get install -y \\\n\
-        build-essential \\\n\
-        libssl-dev \\\n\
-        wget \\\n\
-        bison \\\n\
-        pkg-config \\\n\
-        liburcu-dev \\\n\
-        libuv1 \\\n\
-        libuv1-dev \\\n\
-        libnghttp2-dev \\\n\
-        libcap-dev \\\n\
-        && apt-get clean \\\n\
-        && rm -rf /var/lib/apt/lists/*\n\n'
+        @returns compiled software name.
+        """
+        ret = ''
+        # 设置环境变量，避免交互式提示
+        ret = ret + 'ENV DEBIAN_FRONTEND=noninteractive\n\n'
+        # 安装编译BIND所需的工具和库
+        ret = ret + 'RUN apt-get update && apt-get install -y \\\n\
+    build-essential \\\n\
+    libssl-dev \\\n\
+    wget \\\n\
+    bison \\\n\
+    pkg-config \\\n\
+    liburcu-dev \\\n\
+    libuv1 \\\n\
+    libuv1-dev \\\n\
+    libnghttp2-dev \\\n\
+    libcap-dev \\\n\
+    && apt-get clean \\\n\
+    && rm -rf /var/lib/apt/lists/*\n\n'
 
-            # 创建 bind 用户和组
-            ret = ret + 'RUN groupadd -r named && useradd -r -g named named\n\n'
+        # 创建 bind 用户和组
+        ret = ret + 'RUN groupadd -r named && useradd -r -g named named\n\n'
 
-            bind4_pattern = r'^bind-4([a-zA-Z0-9.]+)$'  # 形如bind-4.1.1
-            bind8_pattern = r'^bind-8([a-zA-Z0-9.]+)$'  # 形如bind-8.1.1
-            bind9_pattern = r'^bind-(9[a-zA-Z0-9.]+)$'  # 形如bind-9.1.1
-            bind10_pattern = r'^bind-10([a-zA-Z0-9.]+)$'  # 形如bind-10.1.1
+        bind4_pattern = r'^bind-4([a-zA-Z0-9.]+)$'  # 形如bind-4.1.1
+        bind8_pattern = r'^bind-8([a-zA-Z0-9.]+)$'  # 形如bind-8.1.1
+        bind9_pattern = r'^bind-(9[a-zA-Z0-9.]+)$'  # 形如bind-9.1.1
+        bind10_pattern = r'^bind-10([a-zA-Z0-9.]+)$'  # 形如bind-10.1.1
 
-            if re.match(bind4_pattern, soft):
-                # TODO
-                return 'bind4'
-            elif re.match(bind8_pattern, soft):
-                # TODO
-                return 'bind9'
-            elif re.match(bind9_pattern, soft):
-                match = re.match(bind9_pattern, soft)
-                version = match.group(1)
-                #         ret = ret + f'RUN wget https://ftp.isc.org/isc/bind9/{version}/{soft}.tar.gz && \\\n\
-                # tar -xzvf {soft}.tar.gz && \\\n\
-                # cd {soft} && \\\n\
-                # ./configure --prefix=/usr/local/named --enable-threads && \\\n\
-                # make && \\\n\
-                # make install && \\\n\
-                # rm -rf /{soft}* /{soft}.tar.gz\n\n'
-                ret = ret + f'RUN wget https://ftp.isc.org/isc/bind9/{version}/{soft}.tar.gz || wget https://ftp.isc.org/isc/bind9/{version}/{soft}.tar.xz && \\\n\
-        if [ -f {soft}.tar.gz ]; then tar -xzvf {soft}.tar.gz; else tar -xJvf {soft}.tar.xz; fi && \\\n\
-        cd {soft} && \\\n\
-        ./configure --prefix=/usr/local/named --with-user=named --with-group=named --enable-threads && \\\n\
-        make && \\\n\
-        make install && \\\n\
-        rm -rf /{soft}* /{soft}.tar.gz /{soft}.tar.xz\n\n'
-            elif re.match(bind10_pattern, soft):
-                # TODO
-                return 'bind10'
+        if re.match(bind4_pattern, soft):
+            # TODO
+            return 'bind4'
+        elif re.match(bind8_pattern, soft):
+            # TODO
+            return 'bind9'
+        elif re.match(bind9_pattern, soft):
+            match = re.match(bind9_pattern, soft)
+            version = match.group(1)
+            #         ret = ret + f'RUN wget https://ftp.isc.org/isc/bind9/{version}/{soft}.tar.gz && \\\n\
+            # tar -xzvf {soft}.tar.gz && \\\n\
+            # cd {soft} && \\\n\
+            # ./configure --prefix=/usr/local/named --enable-threads && \\\n\
+            # make && \\\n\
+            # make install && \\\n\
+            # rm -rf /{soft}* /{soft}.tar.gz\n\n'
+    #         ret = ret + f'RUN cd /usr/bin && wget https://ftp.isc.org/isc/bind9/{version}/{soft}.tar.gz || wget https://ftp.isc.org/isc/bind9/{version}/{soft}.tar.xz && \\\n\
+    # if [ -f {soft}.tar.gz ]; then tar -xzvf {soft}.tar.gz; else tar -xJvf {soft}.tar.xz; fi && \\\n\
+    # cd {soft} && \\\n\
+    # ./configure --prefix=/usr/local/named --with-user=named --with-group=named --enable-threads && \\\n\
+    # make && \\\n\
+    # make install && \\\n\
+    # rm -rf /{soft}* /{soft}.tar.gz /{soft}.tar.xz\n\n'
 
-            ret = ret + 'RUN mkdir -p /etc/bind /var/cache/bind /var/log/bind \n\
-    RUN chown -R named:named /etc/bind /var/cache/bind /var/log/bind\n\n'
 
-            return ret
+            ret = ret + f'RUN cd /usr/bin && wget https://ftp.isc.org/isc/bind9/{version}/{soft}.tar.gz || wget https://ftp.isc.org/isc/bind9/{version}/{soft}.tar.xz && \\\n\
+    if [ -f {soft}.tar.gz ]; then tar -xzvf {soft}.tar.gz; else tar -xJvf {soft}.tar.xz; fi && \\\n\
+    cd {soft} && \\\n\
+    ./configure && \\\n\
+    make && \\\n\
+    make install && \\\n\
+    rm -rf /{soft}* /{soft}.tar.gz /{soft}.tar.xz\n\n'
+        
+        elif re.match(bind10_pattern, soft):
+            # TODO
+            return 'bind10'
+         # 添加缓存、日志目录并授予named用户权限
+#         ret = ret + 'RUN mkdir -p /etc/bind /var/cache/bind /var/log/bind \n\
+# RUN chown -R named:named /etc/bind /var/cache/bind /var/log/bind\n\n'
+
+        # Avoid the "named: error while loading shared libraries: libisc" error when running named
+        
+        ret = ret + 'ENV LD_LIBRARY_PATH=/usr/local/lib/:$LD_LIBRARY_PATH\n'
+
+        # 创建配置文件，其位置和apt-get安装的BIND相同
+        ret = ret + 'RUN mkdir -p /etc/bind /var/cache/bind /var/log/bind \n'
+        ret = ret + 'RUN touch /etc/bind/named.conf\n'
+        ret = ret + 'RUN echo "include \\"/etc/bind/named.conf.options\\";" >> /etc/bind/named.conf\n'
+        ret = ret + 'RUN echo "include \\"/etc/bind/named.conf.local\\";" >> /etc/bind/named.conf\n'
+        ret = ret + 'RUN echo "include \\"/etc/bind/named.conf.default-zones\\";" >> /etc/bind/named.conf\n'
+        ret = ret + 'RUN touch /etc/bind/named.conf.default-zones\n'
+         # 添加内容到 named.conf.default-zones
+        ret = ret + 'RUN echo "// prime the server with knowledge of the root servers" >> /etc/bind/named.conf.default-zones\n'
+        ret = ret + 'RUN echo "zone \\".\\" {" >> /etc/bind/named.conf.default-zones\n'
+        ret = ret + 'RUN echo "    type hint;" >> /etc/bind/named.conf.default-zones\n'
+        ret = ret + 'RUN echo "    file \\"/usr/share/dns/root.hints\\";" >> /etc/bind/named.conf.default-zones\n'
+        ret = ret + 'RUN echo "};" >> /etc/bind/named.conf.default-zones\n'
+        ret = ret + 'RUN echo "" >> /etc/bind/named.conf.default-zones\n'
+        ret = ret + 'RUN echo "// be authoritative for the localhost forward and reverse zones, and for broadcast zones as per RFC 1912" >> /etc/bind/named.conf.default-zones\n'
+        ret = ret + 'RUN echo "zone \\"localhost\\" {" >> /etc/bind/named.conf.default-zones\n'
+        ret = ret + 'RUN echo "    type master;" >> /etc/bind/named.conf.default-zones\n'
+        ret = ret + 'RUN echo "    file \\"/etc/bind/db.local\\";" >> /etc/bind/named.conf.default-zones\n'
+        ret = ret + 'RUN echo "};" >> /etc/bind/named.conf.default-zones\n'
+        ret = ret + 'RUN echo "" >> /etc/bind/named.conf.default-zones\n'
+        ret = ret + 'RUN echo "zone \\"127.in-addr.arpa\\" {" >> /etc/bind/named.conf.default-zones\n'
+        ret = ret + 'RUN echo "    type master;" >> /etc/bind/named.conf.default-zones\n'
+        ret = ret + 'RUN echo "    file \\"/etc/bind/db.127\\";" >> /etc/bind/named.conf.default-zones\n'
+        ret = ret + 'RUN echo "};" >> /etc/bind/named.conf.default-zones\n'
+        ret = ret + 'RUN echo "" >> /etc/bind/named.conf.default-zones\n'
+        ret = ret + 'RUN echo "zone \\"0.in-addr.arpa\\" {" >> /etc/bind/named.conf.default-zones\n'
+        ret = ret + 'RUN echo "    type master;" >> /etc/bind/named.conf.default-zones\n'
+        ret = ret + 'RUN echo "    file \\"/etc/bind/db.0\\";" >> /etc/bind/named.conf.default-zones\n'
+        ret = ret + 'RUN echo "};" >> /etc/bind/named.conf.default-zones\n'
+        ret = ret + 'RUN echo "" >> /etc/bind/named.conf.default-zones\n'
+        ret = ret + 'RUN echo "zone \\"255.in-addr.arpa\\" {" >> /etc/bind/named.conf.default-zones\n'
+        ret = ret + 'RUN echo "    type master;" >> /etc/bind/named.conf.default-zones\n'
+        ret = ret + 'RUN echo "    file \\"/etc/bind/db.255\\";" >> /etc/bind/named.conf.default-zones\n'
+        ret = ret + 'RUN echo "};" >> /etc/bind/named.conf.default-zones\n'
+            
+        # ret = ret + 'RUN touch /usr/local/etc/named.conf\n'
+
+        return ret
 
     def _compileNode(self, node: Node) -> str:
         """!
